@@ -98,3 +98,92 @@ internal static class InfoCommand
         return 0;
     }
 }
+
+internal static class SearchCommand
+{
+    public static int Run(LibraryStore store, string[] args)
+    {
+        if (args.Length == 0)
+        {
+            Console.Error.WriteLine("Usage: tunebox search <query>");
+            return 2;
+        }
+
+        var query = string.Join(' ', args);
+        var results = LibraryQuery.Search(store.Load().Tracks, query);
+        foreach (var track in results)
+        {
+            var suffix = track.Album is null ? "" : $" ({track.Album})";
+            Console.WriteLine($"{track.DisplayArtist} — {track.DisplayTitle}{suffix}");
+        }
+        Console.WriteLine($"{results.Count} result(s) for \"{query}\".");
+        return 0;
+    }
+}
+
+internal static class StatsCommand
+{
+    public static int Run(LibraryStore store, string[] args)
+    {
+        var stats = LibraryStats.Compute(store.Load().Tracks);
+
+        Console.WriteLine($"Tracks:   {stats.TrackCount}");
+        Console.WriteLine($"Size:     {FormatBytes(stats.TotalBytes)}");
+        Console.WriteLine(stats.TracksWithDuration > 0
+            ? $"Duration: {FormatDuration(stats.TotalDuration)} (known for {stats.TracksWithDuration} track(s))"
+            : "Duration: unknown (no track exposed a bitrate)");
+        if (stats.EarliestYear is not null)
+            Console.WriteLine($"Years:    {stats.EarliestYear}–{stats.LatestYear}");
+        Console.WriteLine($"Untagged: {stats.MissingTitleCount} without title, {stats.MissingArtistCount} without artist");
+
+        PrintTop("Top artists", stats.TopArtists);
+        PrintTop("Top genres", stats.TopGenres);
+        PrintTop("Formats", stats.Formats);
+        return 0;
+    }
+
+    private static void PrintTop(string heading, List<KeyValuePair<string, int>> entries)
+    {
+        if (entries.Count == 0)
+            return;
+        Console.WriteLine($"{heading}:");
+        foreach (var (name, count) in entries)
+            Console.WriteLine($"  {name} ({count})");
+    }
+
+    private static string FormatBytes(long bytes) => bytes switch
+    {
+        >= 1L << 30 => $"{bytes / (double)(1L << 30):F2} GiB",
+        >= 1L << 20 => $"{bytes / (double)(1L << 20):F2} MiB",
+        >= 1L << 10 => $"{bytes / (double)(1L << 10):F1} KiB",
+        _ => $"{bytes} B",
+    };
+
+    private static string FormatDuration(TimeSpan span) =>
+        span.TotalHours >= 1
+            ? $"{(int)span.TotalHours}h {span.Minutes}m"
+            : $"{span.Minutes}m {span.Seconds}s";
+}
+
+internal static class DuplicatesCommand
+{
+    public static int Run(LibraryStore store, string[] args)
+    {
+        var groups = DuplicateFinder.Find(store.Load().Tracks);
+        if (groups.Count == 0)
+        {
+            Console.WriteLine("No likely duplicates found.");
+            return 0;
+        }
+
+        foreach (var group in groups)
+        {
+            var first = group[0];
+            Console.WriteLine($"{first.DisplayArtist} — {first.DisplayTitle} ({group.Count} copies):");
+            foreach (var track in group)
+                Console.WriteLine($"  {track.Path} ({track.FileSize:N0} bytes)");
+        }
+        Console.WriteLine($"{groups.Count} duplicate group(s), {groups.Sum(g => g.Count - 1)} extra copie(s).");
+        return 0;
+    }
+}

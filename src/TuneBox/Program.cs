@@ -29,6 +29,9 @@ internal static class Program
             "init" => Init(store),
             "scan" => ScanCommand.Run(store, rest[1..]),
             "list" => ListCommand.Run(store, rest[1..]),
+            "search" => SearchCommand.Run(store, rest[1..]),
+            "stats" => StatsCommand.Run(store, rest[1..]),
+            "duplicates" => DuplicatesCommand.Run(store, rest[1..]),
             "info" => InfoCommand.Run(store, rest[1..]),
             _ => UnknownCommand(rest[0]),
         };
