@@ -187,3 +187,153 @@ internal static class DuplicatesCommand
         return 0;
     }
 }
+
+internal static class PlaylistCommand
+{
+    public static int Run(LibraryStore store, string[] args)
+    {
+        if (args.Length == 0)
+        {
+            Console.Error.WriteLine("""
+                Usage:
+                  tunebox playlist create <name>
+                  tunebox playlist add <name> <query>
+                  tunebox playlist remove <name> <index>
+                  tunebox playlist list
+                  tunebox playlist show <name>
+                  tunebox playlist export <name> <file.m3u>
+                """);
+            return 2;
+        }
+
+        var library = store.Load();
+        try
+        {
+            return args[0] switch
+            {
+                "create" => Create(library, store, args),
+                "add" => Add(library, store, args),
+                "remove" => Remove(library, store, args),
+                "list" => List(library),
+                "show" => Show(library, args),
+                "export" => Export(library, args),
+                _ => Unknown(args[0]),
+            };
+        }
+        catch (InvalidOperationException ex)
+        {
+            Console.Error.WriteLine($"tunebox: {ex.Message}");
+            return 1;
+        }
+        catch (ArgumentOutOfRangeException ex)
+        {
+            Console.Error.WriteLine($"tunebox: {ex.Message}");
+            return 1;
+        }
+    }
+
+    private static int Create(Library library, LibraryStore store, string[] args)
+    {
+        if (args.Length < 2)
+        {
+            Console.Error.WriteLine("Usage: tunebox playlist create <name>");
+            return 2;
+        }
+        var name = string.Join(' ', args[1..]);
+        PlaylistService.Create(library, name);
+        store.Save(library);
+        Console.WriteLine($"Created playlist '{name}'.");
+        return 0;
+    }
+
+    private static int Add(Library library, LibraryStore store, string[] args)
+    {
+        if (args.Length < 3)
+        {
+            Console.Error.WriteLine("Usage: tunebox playlist add <name> <query>");
+            return 2;
+        }
+        var playlist = Require(library, args[1]);
+        if (playlist is null) return 1;
+        var query = string.Join(' ', args[2..]);
+        var added = PlaylistService.AddBySearch(library, playlist, query);
+        store.Save(library);
+        Console.WriteLine(added == 0
+            ? $"No new tracks matching \"{query}\" for playlist '{playlist.Name}'."
+            : $"Added {added} track(s) to '{playlist.Name}'.");
+        return 0;
+    }
+
+    private static int Remove(Library library, LibraryStore store, string[] args)
+    {
+        if (args.Length < 3 || !int.TryParse(args[2], out var index))
+        {
+            Console.Error.WriteLine("Usage: tunebox playlist remove <name> <index>");
+            return 2;
+        }
+        var playlist = Require(library, args[1]);
+        if (playlist is null) return 1;
+        var removed = PlaylistService.RemoveAt(library, playlist, index);
+        store.Save(library);
+        Console.WriteLine($"Removed '{removed.DisplayArtist} — {removed.DisplayTitle}' from '{playlist.Name}'.");
+        return 0;
+    }
+
+    private static int List(Library library)
+    {
+        if (library.Playlists.Count == 0)
+        {
+            Console.WriteLine("No playlists yet. Create one with 'tunebox playlist create <name>'.");
+            return 0;
+        }
+        foreach (var playlist in library.Playlists.OrderBy(p => p.Name, StringComparer.OrdinalIgnoreCase))
+            Console.WriteLine($"{playlist.Name} ({playlist.TrackIds.Count} track(s))");
+        return 0;
+    }
+
+    private static int Show(Library library, string[] args)
+    {
+        if (args.Length < 2)
+        {
+            Console.Error.WriteLine("Usage: tunebox playlist show <name>");
+            return 2;
+        }
+        var playlist = Require(library, args[1]);
+        if (playlist is null) return 1;
+        var tracks = PlaylistService.Resolve(library, playlist);
+        Console.WriteLine($"Playlist '{playlist.Name}':");
+        for (var i = 0; i < tracks.Count; i++)
+            Console.WriteLine($"  {i + 1}. {tracks[i].DisplayArtist} — {tracks[i].DisplayTitle}");
+        if (tracks.Count < playlist.TrackIds.Count)
+            Console.WriteLine($"  ({playlist.TrackIds.Count - tracks.Count} track(s) no longer in the library)");
+        return 0;
+    }
+
+    private static int Export(Library library, string[] args)
+    {
+        if (args.Length < 3)
+        {
+            Console.Error.WriteLine("Usage: tunebox playlist export <name> <file.m3u>");
+            return 2;
+        }
+        var playlist = Require(library, args[1]);
+        if (playlist is null) return 1;
+        M3uExporter.Export(library, playlist, args[2]);
+        Console.WriteLine($"Exported '{playlist.Name}' ({playlist.TrackIds.Count} track(s)) to {args[2]}.");
+        return 0;
+    }
+
+    private static Playlist? Require(Library library, string name)
+    {
+        var playlist = PlaylistService.Find(library, name);
+        if (playlist is null)
+            Console.Error.WriteLine($"tunebox: no playlist named '{name}'.");
+        return playlist;
+    }
+
+    private static int Unknown(string subcommand)
+    {
+        Console.Error.WriteLine($"tunebox: unknown playlist command '{subcommand}'");
+        return 2;
+    }
+}
