@@ -27,6 +27,9 @@ internal static class Program
         return rest[0] switch
         {
             "init" => Init(store),
+            "scan" => ScanCommand.Run(store, rest[1..]),
+            "list" => ListCommand.Run(store, rest[1..]),
+            "info" => InfoCommand.Run(store, rest[1..]),
             _ => UnknownCommand(rest[0]),
         };
     }
